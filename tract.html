@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- <canvas width="600" height="900"></canvas> -->
+<!--<script type="text/javascript" src="https://unpkg.com/shapefile@0.6"></script>
+<script src="https://d3js.org/d3.v5.min.js"></script>-->
+<script src="d3/shapefile.v0.js"></script>
+<script src="d3/d3.v5.js"></script>
+<!-- <script src="https://d3js.org/d3-tile.v0.0.min.js"></script>
+<script src="https://unpkg.com/topojson@3"></script> -->
+
+<style>
+	canvas, #container{
+		position: absolute;
+		width: 975px;
+		height: 600px;
+		overflow: hidden;
+	}
+	svg {
+		display: block;
+		margin: auto;
+	}
+</style>
+
+</head>
+<body>
+	<div id="container"></div>
+<script>
+	const height = 600,
+	width = 600;
+	var path = d3.geoPath();
+	var pov = d3.map();
+
+	const color = d3.scaleThreshold()
+    //.range(['#d7191c','#fdae61','#ffffbf','#abd9e9','#2c7bb6'])
+    .range(d3.schemeReds[7])
+    .domain([0, 9, 17.5, 28.2, 44.2, 100]); //Jinks classification via R classInt package
+
+	const project = d3.geoConicEqualArea().parallels([34,40.5]).rotate([120,0]);
+	//console.log(project([-124.269475, 32.534291]));
+
+	//const project2 = d3.geoConicEqualArea().scale(1).translate([0,0]);
+	//console.log(project2([-124.409591, 32.534155999999996]));
+
+	const bounds = [[-8.78325,-22.8674],[12.68733,2.806587]];
+	const k = Math.min(height / (bounds[1][0] - bounds[0][0]), 600 / (bounds[1][1] - bounds[0][1]));
+	const x1 = (height - k * (bounds[1][0] + bounds[0][0])) / 2;
+	const y1 = (height - k * (bounds[1][1] + bounds[0][1])) / 2;
+
+	project.scale(k * 150).translate([x1, y1]);
+	//project.scale(23.3699*150).translate([254.3809,534.41]);//.fitSize([600,600], topojson.feature(ca, ca.objects.counties));
+
+	path.projection(project);
+
+	var svg = d3.select("#container").append('svg').attr("width", width).attr("height", height);//.style("position", "absolute");
+
+    /*function floor(k) {
+    	return Math.pow(2, Math.floor(Math.log(k) / Math.LN2));
+    };
+	
+	const tiles = d3.tile().size([width, height]).scale(23.3699*150).translate([254.3809,534.41])();
+	console.log(tiles);
+
+	d3.select('#container')
+		.selectAll('img').data(tiles).enter().append('img')
+		.style("position", "absolute")
+		.attr("src", function(d,i) {return "http://" + "abc"[d[1] % 3] + ".tile.openstreetmap.org/" + d[2] + "/" + d[0] + "/" + d[1] + ".png"; })
+		.style("left", function(d){return (d[0] + tiles.translate[0]) * tiles.scale + "px"})
+		.style("top", function(d){return (d[1] + tiles.translate[1]) * tiles.scale + "px"})
+		.attr("width", tiles.scale)
+		.attr("height", tiles.scale); */
+
+	/********************************************************************************************
+		CONSTRUCT KEY FOR MAP
+	********************************************************************************************/
+
+		var fNumber = d3.format(".0%")
+
+		var x = d3.scaleLinear().domain([0,100]).range([0,240])
+		var xAxis = d3.axisBottom(x).tickSize(13).tickValues(color.domain()).tickFormat(function(d) {return fNumber(d / 100)});
+
+		var g = d3.select('svg').append('g').call(xAxis).attr("transform", "translate(300,150)");
+
+		g.select(".domain").remove;
+
+		g.selectAll("rect").data(color.range().map(function(band) {
+			var d = color.invertExtent(band);
+			if (d[0]==null) d[0]= x.domain()[0];
+			if (d[1]==null)	d[1]= x.domain()[1];
+			return d;
+		}))
+		.enter().insert("rect", ".tick").attr("height",8).attr("x", function(d){return x(d[0]); })
+			.attr("width", function(d) {return x(d[1]) - x(d[0]); }).attr("fill", function(d){return color(d[0]); });
+
+		g.append("text").attr("fill", "#000").attr("font-weight", "bold").attr("text-anchor", "start").attr("y", -6)
+			.text("Percent of the eligible population below the poverty level")
+
+		/*var g2 = d3.select('svg').append('g').style("position", "absolute").style("z-index", 300);
+	 
+		g2.append("path")
+			.datum(topojson.mesh(ca, ca.objects.counties))
+			.attr("d", d3.geoPath().projection(project))
+			.attr("fill", "none")
+			.attr("stroke", "black"); */
+	
+
+	/************************************************************************************************************
+			LOAD AND RENDER SHAPEFILE
+	*************************************************************************************************************/
+
+	const data = 
+		d3.csv("data/tract_pov.csv", function(d){
+			pov.set(d.GEOID, +d.pov_rt)
+		});
+	const shp = shapefile.open("data/cb_2018_06_tract_data.shp", "data/cb_2018_06_tract_data.dbf", null);
+	//const cnty = d3.json("data/state.json");
+	//console.log(shp);
+
+	console.log(data);
+	console.log(shp);
+
+	data
+	.then(function(result) {
+		console.log(result);
+		shp
+		.then(
+			source => source.read()
+			.then(
+				function log(result){
+					if (result.done) return;
+					result.value.GEOID = result.value.properties.GEOID
+
+					//console.log(result.value);
+					//console.log(pov);
+
+					svg.append('g')
+					.selectAll("path")
+					.data([result.value]).enter()
+					.append('path')
+					.attr('fill', function(d){ return d.pov_pct = pov.get(d.GEOID) ? color(d.pov_pct = pov.get(d.GEOID)) : 'none'; })
+					.attr("d", path)
+					//.attr("fill", "none")
+					.attr("stroke", "none");
+
+					return source.read().then(log);
+				}
+			)
+		)
+		/*.then(
+			cnty.then(function(ca){
+
+				var g2 = d3.select('svg').append('g').style("position", "absolute");//.style("z-index", 300);
+			 
+				g2.append("path")
+					.datum(topojson.mesh(ca, ca.objects.counties))
+					.attr("d", d3.geoPath().projection(project))
+					.attr("fill", "none")
+					.attr("stroke", "grey"); 
+
+				console.log(topojson.feature(ca, ca.objects.counties)); 
+				console.log(path.bounds(topojson.feature(ca, ca.objects.counties))); 
+			})
+		)*/
+	}).catch(function(error){console.error(error.stack)});
+
+	/************************************************************************************************************
+			LOAD AND RENDER COUNTY TOPOJSON
+	************************************************************************************************************
+
+	d3.json("data/state.json").then(function(ca){
+		console.log(topojson.feature(ca, ca.objects.counties)); 
+		console.log(path.bounds(topojson.feature(ca, ca.objects.counties))); 
+
+		var g2 = d3.select('svg').append('g').style("position", "absolute");//.style("z-index", 300);
+	 
+		g2.append("path")
+			.datum(topojson.mesh(ca, ca.objects.counties))
+			.attr("d", d3.geoPath().projection(project))
+			.attr("fill", "none")
+			.attr("stroke", "black"); 
+
+	}).catch(function(error){console.error(error.stack)}); */
+
+</script>
+</body>
+</html>			
