@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<script src="d3/shapefile.v0.js"></script>
+<script src="d3/d3.v5.js"></script>
+
+<style>
+	canvas, #container{
+		position: absolute;
+		width: 975px;
+		height: 600px;
+		overflow: hidden;
+	}
+	svg {
+		display: block;
+		margin: auto;
+	}
+</style>
+
+</head>
+<body>
+	<div id="container"></div>
+<script>
+	const height = 600,
+	width = 600;
+	var path = d3.geoPath();
+	var pov = d3.map();
+
+	const color = d3.scaleThreshold()
+    .range(d3.schemeReds[7])
+    .domain([0, 9, 17.5, 28.2, 44.2, 100]); 
+
+	const project = d3.geoConicEqualArea().parallels([34,40.5]).rotate([120,0]);
+
+	const bounds = [[-8.78325,-22.8674],[12.68733,2.806587]];
+	const k = Math.min(height / (bounds[1][0] - bounds[0][0]), 600 / (bounds[1][1] - bounds[0][1]));
+	const x1 = (height - k * (bounds[1][0] + bounds[0][0])) / 2;
+	const y1 = (height - k * (bounds[1][1] + bounds[0][1])) / 2;
+
+	project.scale(k * 150).translate([x1, y1]);
+
+	path.projection(project);
+
+	var svg = d3.select("#container").append('svg').attr("width", width).attr("height", height);
+
+	/********************************************************************************************
+		CONSTRUCT KEY FOR MAP
+	********************************************************************************************/
+
+		var fNumber = d3.format(".0%")
+
+		var x = d3.scaleLinear().domain([0,100]).range([0,240])
+		var xAxis = d3.axisBottom(x).tickSize(13).tickValues(color.domain()).tickFormat(function(d) {return fNumber(d / 100)});
+
+		var g = d3.select('svg').append('g').call(xAxis).attr("transform", "translate(300,150)");
+
+		g.select(".domain").remove;
+
+		g.selectAll("rect").data(color.range().map(function(band) {
+			var d = color.invertExtent(band);
+			if (d[0]==null) d[0]= x.domain()[0];
+			if (d[1]==null)	d[1]= x.domain()[1];
+			return d;
+		}))
+		.enter().insert("rect", ".tick").attr("height",8).attr("x", function(d){return x(d[0]); })
+			.attr("width", function(d) {return x(d[1]) - x(d[0]); }).attr("fill", function(d){return color(d[0]); });
+
+		g.append("text").attr("fill", "#000").attr("font-weight", "bold").attr("text-anchor", "start").attr("y", -6)
+			.text("Percent of the eligible population below the poverty level")	
+
+	/************************************************************************************************************
+			LOAD AND RENDER SHAPEFILE
+	*************************************************************************************************************/
+
+	const data = 
+		d3.csv("data/tract_pov.csv", function(d){
+			pov.set(d.GEOID, +d.pov_rt)
+		});
+	const shp = shapefile.open("data/cb_2018_06_tract_data.shp", "data/cb_2018_06_tract_data.dbf", null);
+
+	console.log(data);
+	console.log(shp);
+
+	data
+	.then(function(result) {
+		console.log(result);
+		shp
+		.then(
+			source => source.read()
+			.then(
+				function log(result){
+					if (result.done) return;
+					result.value.GEOID = result.value.properties.GEOID
+
+					svg.append('g')
+					.selectAll("path")
+					.data([result.value]).enter()
+					.append('path')
+					.attr('fill', function(d){ return d.pov_pct = pov.get(d.GEOID) ? color(d.pov_pct = pov.get(d.GEOID)) : 'none'; })
+					.attr("d", path)
+					.attr("stroke", "none");
+
+					return source.read().then(log);
+				}
+			)
+		)
+	}).catch(function(error){console.error(error.stack)});
+
+</script>
+</body>
+</html>			
